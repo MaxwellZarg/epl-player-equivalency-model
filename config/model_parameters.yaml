@@ -1,0 +1,50 @@
+# Model configuration parameters
+
+# Network Equivalency Model
+equivalency_model:
+  min_transitions: 10          # Minimum player transitions between leagues
+  min_games_per_league: 5      # Minimum games played in each league
+  bootstrap_samples: 1000      # Bootstrap iterations for confidence intervals
+  max_paths: 5                # Maximum network paths to consider
+  confidence_level: 0.8       # Confidence interval level (80%)
+  weight_formula: "1/(2^connections) * min_instances"
+
+# Prospect Projection Model  
+prospect_model:
+  test_size: 0.2              # Train/test split ratio
+  cv_folds: 5                 # Cross-validation folds
+  min_games_threshold: 10     # Minimum games for prospect inclusion
+  star_player_percentile: 18.5 # Top % for star player classification
+  epl_player_min_games: 50    # Minimum EPL games for "success"
+  
+# Success Definitions (based on NHL methodology)
+success_definitions:
+  epl_player:
+    min_games: 50
+    min_performance: "above_replacement"
+    min_minutes: 1000
+  
+  star_player:
+    method: "pareto_principle"
+    percentile: 18.5
+    min_games: 30
+    min_goals_assists_per_90: 0.3
+
+# Age groupings for development stages
+age_groups:
+  u18: [16, 17, 18]
+  u21: [19, 20, 21]  
+  u23: [22, 23]
+  senior: [24, 25, 26, 27, 28, 29, 30]
+
+# Data quality thresholds
+data_quality:
+  max_missing_rate: 0.1       # Maximum missing data rate per column
+  min_sample_size: 50         # Minimum sample size for analysis
+  outlier_threshold: 3        # Standard deviations for outlier detection
+
+# Validation parameters
+validation:
+  historical_cases_min: 20    # Minimum historical cases for validation
+  bootstrap_ci_level: 0.8     # Confidence interval level
+  cross_validation_type: "time_series"  # Time-aware CV

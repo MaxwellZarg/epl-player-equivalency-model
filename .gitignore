@@ -1,0 +1,40 @@
+cat >> .gitignore << 'EOF'
+
+# Data files (keep your data private)
+data/raw/
+data/processed/
+*.csv
+*.xlsx
+*.json
+*.pkl
+*.joblib
+
+# Model files
+models/trained/
+models/*.pkl
+models/*.joblib
+
+# Results and outputs
+results/temp/
+*.log
+
+# Environment files
+.env
+config/secrets.yaml
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE files
+.vscode/settings.json
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large files
+*.zip
+*.tar.gz
+data/*.zip
+EOF

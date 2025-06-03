@@ -5,9 +5,7 @@ Adapted from NHL analytics methodology.
 
 import pandas as pd
 import numpy as np
-import networkx as nx
 from typing import Dict, List, Tuple, Optional
-import itertools
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,29 +15,16 @@ class NetworkEquivalency:
     """Calculate league equivalency factors using network approach."""
     
     def __init__(self, min_transitions: int = 10, confidence_level: float = 0.8):
-        """
-        Initialize network equivalency calculator.
-        
-        Args:
-            min_transitions: Minimum player transitions required between leagues
-            confidence_level: Confidence level for bootstrap intervals
-        """
+        """Initialize network equivalency calculator."""
         self.min_transitions = min_transitions
         self.confidence_level = confidence_level
         self.equivalency_factors = {}
-        self.network = None
-        self.transition_data = None
         
         logger.info(f"NetworkEquivalency initialized (min_transitions={min_transitions})")
     
     def calculate_conversion_factor(self, transitions_df: pd.DataFrame, 
                                   league1: str, league2: str) -> Tuple[Optional[float], int]:
-        """
-        Calculate conversion factor between two leagues.
-        
-        Returns:
-            Tuple of (conversion_factor, number_of_transitions)
-        """
+        """Calculate conversion factor between two leagues."""
         # Filter for transitions between these specific leagues
         mask = ((transitions_df['league1'] == league1) & 
                 (transitions_df['league2'] == league2)) | \
@@ -116,9 +101,9 @@ class NetworkEquivalency:
             factor, n_transitions = self.calculate_conversion_factor(
                 transitions_df, league, target_league)
             
-            if factor is not None:
-                # Simple confidence interval (±10% for now)
-                margin = factor * 0.1
+            if factor is not None and factor > 0:
+                # Simple confidence interval (±15% for now)
+                margin = factor * 0.15
                 ci = (max(0, factor - margin), factor + margin)
                 
                 factors[league] = {
@@ -156,8 +141,11 @@ class NetworkEquivalency:
         
         df = pd.DataFrame(table_data)
         
-        # Sort by equivalency factor (descending)
-        df = df.sort_values('Equivalency_Factor', ascending=False, na_last=True)
+        # Sort by equivalency factor (descending) - pandas compatible
+        df = df.sort_values('Equivalency_Factor', ascending=False)
+        # Move null values to end manually
+        null_mask = df['Equivalency_Factor'].isna()
+        df = pd.concat([df[~null_mask], df[null_mask]]).reset_index(drop=True)
         
         return df
 

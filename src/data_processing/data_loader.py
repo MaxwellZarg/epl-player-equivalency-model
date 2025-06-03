@@ -37,27 +37,70 @@ class DataLoader:
         with open(self.config_path, 'r') as f:
             return yaml.safe_load(f)
     
-    def _build_file_path(self, data_root: str, league: str, season: str, stat_type: str = "standard") -> Path:
-        """Build file path for specific league/season/stat combination."""
+    def get_best_stat_file_for_league(self, league: str) -> str:
+        """Get the best available stat file for a league."""
         league_name = self.leagues[league]['fbref_name']
-        file_name = self.data_files[stat_type]
         
-        return Path(data_root) / f"{league_name}_{season}" / file_name
+        # EPL and Championship have standard stats
+        if league in ['premier_league', 'championship']:
+            return 'standard'
+        # League One and Two use shooting stats (has goals)
+        else:
+            return 'shooting'
     
-    def load_single_file(self, file_path: Union[str, Path]) -> pd.DataFrame:
-        """Load a single CSV file with error handling."""
-        file_path = Path(file_path)
+    def load_and_combine_stats(self, data_root: str, league: str, season: str) -> pd.DataFrame:
+        """Load and combine multiple stat files to get all needed data."""
+        league_name = self.leagues[league]['fbref_name']
+        season_dir = Path(data_root) / f"{league_name}_{season}"
         
-        if not file_path.exists():
-            raise FileNotFoundError(f"Data file not found: {file_path}")
+        if not season_dir.exists():
+            raise FileNotFoundError(f"Season directory not found: {season_dir}")
         
-        try:
-            df = pd.read_csv(file_path)
-            logger.debug(f"Loaded {len(df)} rows from {file_path}")
-            return df
-        except Exception as e:
-            logger.error(f"Error loading {file_path}: {e}")
-            raise
+        # Start with the main stats file
+        main_stat_type = self.get_best_stat_file_for_league(league)
+        main_file = season_dir / self.data_files[main_stat_type]
+        
+        if not main_file.exists():
+            raise FileNotFoundError(f"Main stats file not found: {main_file}")
+        
+        # Load main dataframe
+        df_main = pd.read_csv(main_file)
+        logger.debug(f"Loaded main stats from {main_file}: {len(df_main)} players")
+        
+        # For leagues without standard stats, we need to get assists from passing stats
+        if league in ['league_one', 'league_two']:
+            try:
+                passing_file = season_dir / self.data_files['passing']
+                if passing_file.exists():
+                    df_passing = pd.read_csv(passing_file)
+                    # Merge to get assists
+                    if 'assists' in df_passing.columns and 'player' in df_passing.columns:
+                        df_main = df_main.merge(
+                            df_passing[['player', 'assists']], 
+                            on='player', 
+                            how='left'
+                        )
+                        logger.debug(f"Added assists from passing stats")
+            except Exception as e:
+                logger.warning(f"Could not load passing stats for {league} {season}: {e}")
+        
+        # Get minutes from playingtime stats if not available
+        if 'minutes' not in df_main.columns:
+            try:
+                playtime_file = season_dir / self.data_files['playingtime']
+                if playtime_file.exists():
+                    df_playtime = pd.read_csv(playtime_file)
+                    if 'minutes' in df_playtime.columns and 'player' in df_playtime.columns:
+                        df_main = df_main.merge(
+                            df_playtime[['player', 'minutes', 'games']], 
+                            on='player', 
+                            how='left'
+                        )
+                        logger.debug(f"Added minutes/games from playingtime stats")
+            except Exception as e:
+                logger.warning(f"Could not load playingtime stats for {league} {season}: {e}")
+        
+        return df_main
     
     def clean_dataframe(self, df: pd.DataFrame, league: str, season: str) -> pd.DataFrame:
         """Clean and standardize dataframe."""
@@ -83,29 +126,88 @@ class DataLoader:
             if col in df_clean.columns:
                 df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
         
+        # Fill missing assists with 0 for leagues that don't track them separately
+        if 'assists' not in df_clean.columns:
+            df_clean['assists'] = 0
+        
         # Remove rows with missing essential data
-        essential_cols = ['player', 'games']
+        essential_cols = ['player']
         for col in essential_cols:
             if col in df_clean.columns:
                 df_clean = df_clean.dropna(subset=[col])
         
-        # Filter to common stats available across all leagues
+        # Filter to available common stats
         available_cols = [col for col in self.common_stats if col in df_clean.columns]
         meta_cols = ['league', 'season']
+        
+        # Always include these critical columns even if not in common_stats
+        critical_cols = ['goals', 'assists', 'minutes', 'games']
+        for col in critical_cols:
+            if col in df_clean.columns and col not in available_cols:
+                available_cols.append(col)
+        
         df_clean = df_clean[available_cols + meta_cols]
         
         logger.debug(f"Cleaned dataframe: {len(df_clean)} rows, {len(df_clean.columns)} columns")
         return df_clean
     
-    def identify_transitions(self, df: pd.DataFrame, min_games: int = 5) -> pd.DataFrame:
+    def load_league_season(self, data_root: str, league: str, season: str) -> pd.DataFrame:
+        """Load data for a specific league and season."""
+        try:
+            df = self.load_and_combine_stats(data_root, league, season)
+            df_clean = self.clean_dataframe(df, league, season)
+            
+            logger.info(f"Loaded {league} {season}: {len(df_clean)} players")
+            return df_clean
+            
+        except FileNotFoundError as e:
+            logger.warning(f"Data not found for {league} {season}: {e}")
+            return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"Error loading {league} {season}: {e}")
+            return pd.DataFrame()
+    
+    def load_all_data(self, data_root: str, leagues: Optional[List[str]] = None, 
+                     seasons: Optional[List[str]] = None) -> pd.DataFrame:
+        """Load data for all specified leagues and seasons."""
+        
+        # Use all leagues/seasons if not specified
+        leagues = leagues or list(self.leagues.keys())
+        seasons = seasons or self.seasons
+        
+        all_data = []
+        total_files = len(leagues) * len(seasons)
+        loaded_files = 0
+        
+        logger.info(f"Loading data for {len(leagues)} leagues, {len(seasons)} seasons ({total_files} combinations)")
+        
+        for league in leagues:
+            for season in seasons:
+                df = self.load_league_season(data_root, league, season)
+                if not df.empty:
+                    all_data.append(df)
+                    loaded_files += 1
+        
+        if not all_data:
+            raise ValueError("No data could be loaded")
+        
+        combined_df = pd.concat(all_data, ignore_index=True)
+        logger.info(f"Successfully loaded {loaded_files}/{total_files} combinations: {len(combined_df)} total players")
+        
+        return combined_df
+    
+    def identify_transitions(self, df: pd.DataFrame, min_games: int = 3) -> pd.DataFrame:
         """Identify players who played in multiple leagues in the same season."""
         transitions = []
         
         logger.info("Identifying player transitions between leagues...")
         
         for (player, season), group in df.groupby(['player', 'season']):
-            # Filter to players with sufficient games in each league
-            valid_leagues = group[group['games'] >= min_games]
+            # Filter to players with sufficient games in each league (or sufficient minutes)
+            valid_leagues = group[
+                (group.get('games', 0) >= min_games) | 
+                (group.get('minutes', 0) >= min_games * 30)  # Assume 30 min per game minimum
+            ]
             
             if len(valid_leagues) > 1:  # Player in multiple leagues
                 leagues = valid_leagues['league'].unique()
@@ -122,15 +224,15 @@ class DataLoader:
                             'season': season,
                             'league1': league1,
                             'league2': league2,
-                            'games1': stats1['games'],
-                            'games2': stats2['games'],
-                            'goals1': stats1['goals'],
-                            'goals2': stats2['goals'],
-                            'assists1': stats1['assists'],
-                            'assists2': stats2['assists'],
-                            'minutes1': stats1['minutes'],
-                            'minutes2': stats2['minutes'],
-                            'age': stats1['age']
+                            'games1': stats1.get('games', 0),
+                            'games2': stats2.get('games', 0),
+                            'goals1': stats1.get('goals', 0),
+                            'goals2': stats2.get('goals', 0),
+                            'assists1': stats1.get('assists', 0),
+                            'assists2': stats2.get('assists', 0),
+                            'minutes1': stats1.get('minutes', 0),
+                            'minutes2': stats2.get('minutes', 0),
+                            'age': stats1.get('age', 0)
                         }
                         transitions.append(transition)
         

@@ -28,7 +28,7 @@ leagues:
     equivalency_factor: null
     fbref_name: "League-Two"
 
-# Common statistics across all leagues (based on your data structure)
+# Common statistics available across ALL leagues (based on actual data)
 common_stats:
   - "player"
   - "nationality"
@@ -36,31 +36,35 @@ common_stats:
   - "team"
   - "age"
   - "birth_year"
-  - "games"
-  - "minutes"
+  # From shooting stats (available in all leagues)
   - "goals"
-  - "assists"
+  - "shots"
+  - "shots_on_target"
+  # From misc stats (available in all leagues)  
   - "cards_yellow"
   - "cards_red"
+  - "fouls"
+  - "fouled"
 
-# Position groupings for analysis
+# Position groupings
 position_groups:
   forwards: ["FW", "CF", "ST", "LW", "RW"]
   midfielders: ["MF", "CM", "CAM", "CDM", "LM", "RM", "AM", "DM"]
   defenders: ["DF", "CB", "LB", "RB", "LWB", "RWB", "WB"]
   goalkeepers: ["GK"]
 
-# Data files available (based on your scraper structure)
+# Data files available (what actually exists)
 data_files:
-  standard: "standard_stats.csv"
   shooting: "shooting_stats.csv"
-  passing: "passing_stats.csv" 
+  passing: "passing_stats.csv"
   defense: "defense_stats.csv"
   gca: "gca_stats.csv"
   misc: "misc_stats.csv"
   playingtime: "playingtime_stats.csv"
+  # standard only exists for EPL and Championship
+  standard: "standard_stats.csv"
 
-# Available seasons (your 10-year range)
+# Available seasons
 seasons:
   - "2014-2015"
   - "2015-2016"
